@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mimastore-backend
+    restart: always
+    ports:
+      - '8080:8080'
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://${DB_HOST:-localhost}:3306/MimaStore?characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&useUnicode=true
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-mimastore_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-12345}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST:-localhost}
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: myuser
+      SPRING_RABBITMQ_PASSWORD: secret
+    networks:
+      - mima-network
+
+networks:
+  mima-network:
+    external: true

@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  consumer-comprovantes:
+    build: .
+    container_name: consumer-comprovantes
+    restart: unless-stopped
+    environment:
+      # RabbitMQ (usar nome do serviço na rede Docker)
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=myuser
+      - RABBITMQ_PASSWORD=secret
+      - RABBITMQ_VHOST=/
+      - COMPROVANTE_VENDA_QUEUE=comprovante.venda.queue
+      - RABBITMQ_PREFETCH=5
+      - RABBITMQ_RECONNECT_DELAY=5
+      
+      # SMTP (Maileroo)
+      - SMTP_SERVER=smtp.maileroo.com
+      - SMTP_PORT=587
+      - SMTP_USE_TLS=1
+      - SMTP_USE_SSL=0
+      - SMTP_USER=mimatestecaue@92f8eb7ddd8b8d6c.maileroo.org
+      - SMTP_PASS=c2e619492e8587ac45944bb0
+      - SMTP_AUTH_REQUIRED=1
+      - SMTP_DEBUG=0
+      - SMTP_RETRY_ATTEMPTS=3
+      - SMTP_RETRY_DELAY=2
+      - EMAIL_FROM=mimatestecaue@92f8eb7ddd8b8d6c.maileroo.org
+      - SENDER_NAME=Mima Store
+      
+      # Dados da Loja
+      - LOJA_NOME=Mima Store
+      - LOJA_ENDERECO=Rua das Compras, 123 - Centro - São Paulo/SP
+      - LOJA_TELEFONE=(11) 3000-0000
+      - LOJA_CNPJ=12.345.678/0001-90
+    networks:
+      - mima-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  mima-network:
+    external: true

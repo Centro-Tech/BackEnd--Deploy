@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  consumer-password-recovery:
+    build: .
+    container_name: consumer-password-recovery
+    restart: unless-stopped
+    environment:
+      # RabbitMQ (usar nome do serviço na rede Docker)
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=myuser
+      - RABBITMQ_PASSWORD=secret
+      - RABBITMQ_VHOST=/
+      - PASSWORD_RECOVERY_QUEUE=password.recovery.queue
+      - RABBITMQ_PREFETCH=5
+      - RABBITMQ_RECONNECT_DELAY=5
+      
+      # SMTP (Maileroo)
+      - SMTP_SERVER=smtp.maileroo.com
+      - SMTP_PORT=587
+      - SMTP_USE_TLS=1
+      - SMTP_USE_SSL=0
+      - SMTP_USER=mima@0935a8e1530952e9.maileroo.org
+      - SMTP_PASS=1cff35807ba2cc8b1ac2103e
+      - SMTP_AUTH_REQUIRED=1
+      - SMTP_DEBUG=0
+      - SMTP_RETRY_ATTEMPTS=3
+      - SMTP_RETRY_DELAY=2
+      - EMAIL_FROM=mima@0935a8e1530952e9.maileroo.org
+      - SENDER_NAME=Mima Store
+      
+      # URLs do sistema
+      - FRONTEND_RESET_URL=${FRONTEND_RESET_URL:-https://mimastore.com/reset-password}
+      - BACKEND_BASE_URL=${BACKEND_BASE_URL:-http://localhost:8080}
+      - FORCE_BACKEND_AUTH_LINK=0
+    networks:
+      - mima-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  mima-network:
+    external: true

@@ -1,0 +1,116 @@
+name: CI/CD - Consumer de Comprovantes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'consumer/**'
+      - '.github/workflows/deploy-consumer.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy-consumer:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        host: ["host_a", "host_b"]
+
+    steps:
+      # 1️⃣ Checkout
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # 2️⃣ Criar chaves SSH
+      - name: Criar chaves SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY_A }}" > ~/.ssh/private_key_a.pem
+          chmod 600 ~/.ssh/private_key_a.pem
+          echo "${{ secrets.EC2_SSH_KEY_B }}" > ~/.ssh/private_key_b.pem
+          chmod 600 ~/.ssh/private_key_b.pem
+          
+          # Validar formato das chaves
+          echo "🔑 Validando chave A..."
+          head -1 ~/.ssh/private_key_a.pem
+          echo "🔑 Validando chave B..."
+          head -1 ~/.ssh/private_key_b.pem
+
+      # 3️⃣ Mapear host
+      - name: Definir host e chave SSH
+        run: |
+          if [ "${{ matrix.host }}" = "host_a" ]; then
+            echo "HOST_REAL=${{ secrets.REMOTE_HOST }}" >> $GITHUB_ENV
+            echo "SSH_KEY_PATH=$HOME/.ssh/private_key_a.pem" >> $GITHUB_ENV
+            echo "RABBITMQ_HOST=${{ secrets.REMOTE_HOST_PRIVADO_A }}" >> $GITHUB_ENV
+          else
+            echo "HOST_REAL=${{ secrets.REMOTE_HOST_B }}" >> $GITHUB_ENV
+            echo "SSH_KEY_PATH=$HOME/.ssh/private_key_b.pem" >> $GITHUB_ENV
+            echo "RABBITMQ_HOST=${{ secrets.REMOTE_HOST_PRIVADO_B }}" >> $GITHUB_ENV
+          fi
+
+      # 4️⃣ Copiar arquivos do consumer
+      - name: Copiar consumer para EC2 pública
+        run: |
+          ssh -i ${{ env.SSH_KEY_PATH }} \
+            -o StrictHostKeyChecking=no \
+            ${{ secrets.REMOTE_USER }}@${{ env.HOST_REAL }} \
+            "mkdir -p /home/${{ secrets.REMOTE_USER }}/consumer"
+
+          rsync -avz -e "ssh -i ${{ env.SSH_KEY_PATH }} -o StrictHostKeyChecking=no" \
+            consumer/ \
+            ${{ secrets.REMOTE_USER }}@${{ env.HOST_REAL }}:/home/${{ secrets.REMOTE_USER }}/consumer/
+
+      # 5️⃣ Atualizar IP do RabbitMQ e reiniciar consumer
+      - name: Configurar e iniciar consumer
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          RABBITMQ_HOST: ${{ env.RABBITMQ_HOST }}
+        with:
+          host: ${{ env.HOST_REAL }}
+          username: ${{ secrets.REMOTE_USER }}
+          key: ${{ matrix.host == 'host_a' && secrets.EC2_SSH_KEY_A || secrets.EC2_SSH_KEY_B }}
+          envs: RABBITMQ_HOST
+          script: |
+            set -e
+            cd /home/${{ secrets.REMOTE_USER }}/consumer
+            
+            # Atualizar IP do RabbitMQ no .env
+            echo "RABBITMQ_HOST=${RABBITMQ_HOST}" > .env.runtime
+            echo "RABBITMQ_PORT=5672" >> .env.runtime
+            echo "RABBITMQ_USER=myuser" >> .env.runtime
+            echo "RABBITMQ_PASSWORD=secret" >> .env.runtime
+            
+            # Exportar para uso do docker-compose
+            export RABBITMQ_HOST=${RABBITMQ_HOST}
+            export NETWORK_MODE=host
+            
+            # Tornar manage.sh executável
+            chmod +x manage.sh
+            
+            # Parar consumer antigo se existir
+            docker stop consumer-comprovantes 2>/dev/null || true
+            docker rm consumer-comprovantes 2>/dev/null || true
+            
+            # Iniciar consumer com IP correto
+            echo "🚀 Iniciando consumer com RabbitMQ em ${RABBITMQ_HOST}:5672"
+            ./manage.sh start
+            
+            # Aguardar 3 segundos
+            sleep 3
+            
+            # Verificar status
+            echo "✅ Status do consumer:"
+            ./manage.sh status
+            
+            echo ""
+            echo "📝 Últimos logs:"
+            docker logs consumer-comprovantes --tail=50 2>&1 || echo "Container ainda inicializando..."
+
+      # 6️⃣ Resumo
+      - name: Resumo do Deploy
+        if: success()
+        run: |
+          echo "✅ Consumer deployado em ${{ env.HOST_REAL }}"
+          echo "🔌 RabbitMQ: ${{ env.RABBITMQ_HOST }}:5672"
+          echo "📧 SMTP: smtp.maileroo.com:587"

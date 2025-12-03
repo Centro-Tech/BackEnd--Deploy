@@ -1,0 +1,5 @@
+colocar função de repor a quantidade de peças por codigo
+nesse caso, se a quantidade for 0, vendido volta a ser false em vestuario
+
+relatorio sobre s pesquisas realizaadas juntamente com o prototipo de wireframe 
+relatorio sobre as mudancas realizadas no codigo em relacao a venda 

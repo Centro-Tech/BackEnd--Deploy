@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Projeto Mima Store</title>
+    <link rel="stylesheet" href="./swagger-ui.css" />
+    <link rel="stylesheet" href="./index.css" />
+    <link rel="icon" type="image/png" href="./favicon-32x32.png" />
+    <style>
+      @font-face {
+        font-family: 'Wreath';
+        src: url('./fontes/Wreath%20Regular.woff2') format('woff2');
+        font-weight: normal;
+        font-style: normal;
+      }
+
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        background: white;
+      }
+
+      .custom-header {
+        text-align: center;
+        padding: 20px 0;
+        background-color: #fce9f8;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        margin-bottom: 10px;
+      }
+
+      .custom-header h1 {
+        font-family: 'Wreath', sans-serif;
+        color: #7A4988;
+        margin: 0;
+        font-size: 28px;
+      }
+
+      .custom-header h2 {
+        color: #555;
+        margin: 4px 0 0;
+        font-size: 18px;
+      }
+
+      .swagger-ui .topbar,
+      .swagger-ui .information-container.wrapper {
+        display: none;
+      }
+
+      .swagger-ui .servers {
+        background-color: #e6d7ee;
+        border-radius: 5px;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="custom-header">
+      <h1>Projeto Mima Store</h1>
+      <h2>Documentação Técnica</h2>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <script src="./swagger-ui-bundle.js"></script>
+    <script src="./swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = function () {
+        SwaggerUIBundle({
+          url: "/v3/api-docs",
+          dom_id: "#swagger-ui",
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          layout: "StandaloneLayout"
+        });
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,304 @@
+name: CI/CD - Backend MimaStore
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy-backend:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -------------------------------------------------------------
+      # 1️⃣ Checkout do repositório
+      # -------------------------------------------------------------
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------------------
+      # 2️⃣ Configuração do Java
+      # -------------------------------------------------------------
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # -------------------------------------------------------------
+      # 3️⃣ Build do projeto
+      # -------------------------------------------------------------
+      - name: BE - Compilar projeto
+        run: |
+          echo "🏗️ Iniciando build do backend..."
+          cd "Sprint 4 - CleanArch/JavaSpringBoot/projetoMima"
+          mvn clean package -DskipTests
+          echo "✅ Build concluído com sucesso."
+
+      # -------------------------------------------------------------
+      # 3.5️⃣ Setup Python para consumers RabbitMQ
+      # -------------------------------------------------------------
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validar consumers Python (lint básico)
+        run: |
+          echo "🔍 Verificando sintaxe dos consumers Python..."
+          python -m py_compile "Consumer - RabbitMQ/Envio de Comprovante/comprovante_venda_consumer.py"
+          python -m py_compile "Consumer - RabbitMQ/Recuperação de Senha/password_recovery_consumer_backup.py"
+          echo "✅ Consumers Python validados com sucesso!"
+
+      # -------------------------------------------------------------
+      # 4️⃣ Criação das chaves SSH temporárias
+      # -------------------------------------------------------------
+      - name: Criar chaves SSH para Zona 1 e Zona 2
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY_AB }}" > ~/.ssh/private_key_ab.pem
+          chmod 600 ~/.ssh/private_key_ab.pem
+          echo "${{ secrets.EC2_SSH_KEY_CD }}" > ~/.ssh/private_key_cd.pem
+          chmod 600 ~/.ssh/private_key_cd.pem
+          ls -lah ~/.ssh
+
+      # -------------------------------------------------------------
+      # 5️⃣ Script remoto de deploy (criado no host destino)
+      # -------------------------------------------------------------
+      - name: Criar script de deploy para hosts privados
+        run: |
+          PROJETO_DIR="Sprint 4 - CleanArch/JavaSpringBoot/projetoMima"
+          mkdir -p "$PROJETO_DIR"
+
+          cat << 'EOF' > "$PROJETO_DIR/deploy_on_privado.sh"
+          #!/bin/bash
+          set -euo pipefail
+
+          echo "🚀 Iniciando deploy privado no host $(hostname)..."
+
+          # Parâmetros de configuração (devem ser passados via variáveis de ambiente)
+          RUN_DB=${RUN_DB:-false}          # true para subir MySQL, false para não subir
+          DB_HOST=${DB_HOST:-localhost}    # Host do banco (localhost ou IP privado da instância B)
+          DB_USERNAME=${DB_USERNAME:-mimastore_user}
+          DB_PASSWORD=${DB_PASSWORD:-12345}
+          RABBITMQ_HOST=${RABBITMQ_HOST:-localhost} # Host do RabbitMQ
+
+          echo "📋 Configurações:"
+          echo "  - RUN_DB: $RUN_DB"
+          echo "  - DB_HOST: $DB_HOST"
+          echo "  - DB_USERNAME: $DB_USERNAME"
+          echo "  - RABBITMQ_HOST: $RABBITMQ_HOST"
+
+          # ✅ Corrige permissão do Docker socket (caso travado)
+          sudo chmod 666 /var/run/docker.sock || true
+
+          PROJETO_DIR="$HOME/backend"
+          DB_DIR="$PROJETO_DIR/Banco de Dados"
+          BACKEND_DIR="$PROJETO_DIR/JavaSpringBoot/projetoMima"
+          CONSUMER_COMPROVANTE_DIR="$HOME/backend/Consumer - RabbitMQ/Envio de Comprovante"
+          CONSUMER_SENHA_DIR="$HOME/backend/Consumer - RabbitMQ/Recuperação de Senha"
+
+          COMPOSE_CMD=""
+          if docker compose version &> /dev/null; then
+            COMPOSE_CMD="docker compose"
+          elif command -v docker-compose &> /dev/null; then
+            COMPOSE_CMD="docker-compose"
+          fi
+
+          # Instala docker-compose se não existir
+          if [ -z "$COMPOSE_CMD" ]; then
+            DOCKER_COMPOSE_VERSION=2.24.0
+            sudo curl -SL "https://github.com/docker/compose/releases/download/v$DOCKER_COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose || true
+            COMPOSE_CMD="docker-compose"
+          fi
+
+          echo "🌐 Verificando se a rede 'mima-network' existe..."
+          if ! docker network ls --format '{{.Name}}' | grep -q '^mima-network$'; then
+            echo "🧩 Criando rede Docker: mima-network"
+            sudo docker network create mima-network || true
+          else
+            echo "✅ Rede 'mima-network' já existe."
+          fi
+
+          # Banco de dados e RabbitMQ (apenas se RUN_DB=true)
+          if [ "$RUN_DB" = "true" ]; then
+            echo "🗄️ Subindo MySQL e RabbitMQ na instância privada B..."
+            if [ -d "$DB_DIR" ]; then
+              cd "$DB_DIR"
+              sudo \$COMPOSE_CMD down -v || true
+              sudo \$COMPOSE_CMD up -d --build
+              echo "✅ MySQL iniciado com sucesso"
+              echo "⏳ Aguardando MySQL inicializar (30 segundos)..."
+              sleep 30
+            else
+              echo "⚠️ Diretório do banco não encontrado: $DB_DIR"
+            fi
+          else
+            echo "⏭️ Pulando criação do banco e RabbitMQ (RUN_DB=false)"
+            echo "📍 Backend conectará ao MySQL em: $DB_HOST:3306"
+            echo "📍 Backend conectará ao RabbitMQ em: $RABBITMQ_HOST:5672"
+          fi
+
+          # Backend
+          if [ -d "$BACKEND_DIR" ]; then
+            echo "⚙️ Subindo containers do Backend..."
+            cd "$BACKEND_DIR"
+            
+            # Criar arquivo .env com configurações do banco
+            echo "📝 Criando arquivo .env com configurações do banco..."
+            echo "DB_HOST=\$DB_HOST" > .env
+            echo "DB_USERNAME=\$DB_USERNAME" >> .env
+            echo "DB_PASSWORD=\$DB_PASSWORD" >> .env
+            echo "RABBITMQ_HOST=\$RABBITMQ_HOST" >> .env
+            
+            sudo \$COMPOSE_CMD down -v || true
+            sudo \$COMPOSE_CMD up -d --build
+            
+            echo "⏳ Aguardando backend inicializar..."
+            sleep 15
+          fi
+
+          # Consumer de Comprovantes
+          if [ -d "$CONSUMER_COMPROVANTE_DIR" ]; then
+            echo "📧 Subindo consumer de comprovantes..."
+            cd "$CONSUMER_COMPROVANTE_DIR"
+            sudo $COMPOSE_CMD down || true
+            sudo $COMPOSE_CMD up -d --build
+            echo "✅ Consumer de comprovantes iniciado"
+          else
+            echo "⚠️ Diretório de consumer de comprovantes não encontrado: $CONSUMER_COMPROVANTE_DIR"
+          fi
+
+          # Consumer de Recuperação de Senha
+          if [ -d "$CONSUMER_SENHA_DIR" ]; then
+            echo "🔑 Subindo consumer de recuperação de senha..."
+            cd "$CONSUMER_SENHA_DIR"
+            sudo $COMPOSE_CMD -f docker-compose.consumer.yml down || true
+            sudo $COMPOSE_CMD -f docker-compose.consumer.yml up -d --build
+            echo "✅ Consumer de recuperação de senha iniciado"
+          else
+            echo "⚠️ Diretório de consumer de senha não encontrado: $CONSUMER_SENHA_DIR"
+          fi
+
+          echo "✅ Deploy finalizado com sucesso em $(hostname)"
+          echo "📊 Containers em execução:"
+          sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          EOF
+
+          chmod +x "$PROJETO_DIR/deploy_on_privado.sh"
+
+      # -------------------------------------------------------------
+      # 6️⃣ Deploy automatizado (verifica apenas hosts públicos)
+      # -------------------------------------------------------------
+      - name: BE - Deploy nos Hosts Privados (A→B e C→D)
+        run: |
+          set -euo pipefail
+
+          HOST_A=${{ secrets.REMOTE_HOST }}
+          HOST_B=${{ secrets.REMOTE_HOST_B }}
+          HOST_C=${{ secrets.REMOTE_HOST_C }}
+          HOST_D=${{ secrets.REMOTE_HOST_D }}
+          USER=${{ secrets.REMOTE_USER }}
+
+          KEY_AB=~/.ssh/private_key_ab.pem
+          KEY_CD=~/.ssh/private_key_cd.pem
+
+          # ---------------------------------------------------------
+          # Funções com retry (SSH e RSYNC)
+          # ---------------------------------------------------------
+          retry_ssh() {
+            local cmd="$1"
+            local key="$2"
+            local host="$3"
+            local tries=3
+            local delay=5
+            local attempt=1
+            until [ $attempt -gt $tries ]; do
+              echo "🔁 Tentativa $attempt de conexão com $host..."
+              ssh -i "$key" -o ConnectTimeout=20 -o StrictHostKeyChecking=no $USER@$host "$cmd" && return 0
+              echo "⚠️ Falha, tentando novamente em $delay segundos..."
+              sleep $delay
+              attempt=$((attempt+1))
+              delay=$((delay*2))
+            done
+            echo "❌ Falha ao conectar em $host após $tries tentativas."
+            return 1
+          }
+
+          retry_rsync() {
+            local src="$1"
+            local dest="$2"
+            local key="$3"
+            local tries=3
+            local delay=5
+            local attempt=1
+            until [ $attempt -gt $tries ]; do
+              echo "📦 Enviando arquivos (tentativa $attempt)..."
+              rsync -avz --partial --timeout=60 \
+                -e "ssh -i $key -o StrictHostKeyChecking=no -o ServerAliveInterval=30" \
+                "$src" "$dest" && return 0
+              echo "⚠️ Falha no rsync, tentando novamente em $delay segundos..."
+              sleep $delay
+              attempt=$((attempt+1))
+              delay=$((delay*2))
+            done
+            echo "❌ Falha no rsync após $tries tentativas."
+            return 1
+          }
+
+          # ---------------------------------------------------------
+          # 🧭 Deploy - Zona 1 (A → B)
+          # ---------------------------------------------------------
+          echo "🌍 Iniciando deploy na Zona 1 (A → B)..."
+
+          echo "🔎 Testando acesso SSH ao host público A..."
+          if ! ssh -i "$KEY_AB" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no $USER@$HOST_A "echo ok" >/dev/null 2>&1; then
+            echo "❌ Host público A ($HOST_A) inacessível via SSH!"
+            exit 1
+          fi
+
+          retry_rsync "Sprint 4 - CleanArch/" "$USER@$HOST_A:/home/$USER/backend_temp_deploy" "$KEY_AB"
+          retry_rsync "Consumer - RabbitMQ/" "$USER@$HOST_A:/home/$USER/backend_temp_deploy/Consumer - RabbitMQ" "$KEY_AB"
+          retry_rsync "Sprint 4 - CleanArch/nginx/" "$USER@$HOST_A:/home/$USER/backend_temp_deploy/nginx" "$KEY_AB"
+          retry_ssh "echo '${{ secrets.EC2_SSH_KEY_AB }}' > ~/private_key.pem && chmod 600 ~/private_key.pem" "$KEY_AB" "$HOST_A"
+
+          echo "🔁 Replicando código de A → Privado B (COM MySQL e RabbitMQ)..."do B (COM MySQL e RabbitMQ)..."
+          retry_ssh "
+            rsync -avz --partial --timeout=60 \
+              -e 'ssh -i ~/private_key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30' \
+              /home/$USER/backend_temp_deploy/ $USER@$HOST_B:/home/$USER/backend
+          " "$KEY_AB" "$HOST_A"
+
+          echo "⚙️ Executando script de deploy no Privado B (COM MySQL + RabbitMQ)..."
+          retry_ssh "ssh -i ~/private_key.pem -o StrictHostKeyChecking=no $USER@$HOST_B 'RUN_DB=true DB_HOST=localhost DB_USERNAME=mimastore_user DB_PASSWORD=12345 bash /home/$USER/backend/JavaSpringBoot/projetoMima/deploy_on_privado.sh'" "$KEY_AB" "$HOST_A"
+
+          # ---------------------------------------------------------
+          # 🧭 Deploy - Zona 2 (C → D)
+          # ---------------------------------------------------------
+          echo "🌍 Iniciando deploy na Zona 2 (C → D)..."
+
+          echo "🔎 Testando acesso SSH ao host público C..."
+          if ! ssh -i "$KEY_CD" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no $USER@$HOST_C "echo ok" >/dev/null 2>&1; then
+            echo "❌ Host público C ($HOST_C) inacessível via SSH!"
+            exit 1
+          fi
+
+          retry_rsync "Sprint 4 - CleanArch/" "$USER@$HOST_C:/home/$USER/backend_temp_deploy" "$KEY_CD"
+          retry_rsync "Consumer - RabbitMQ/" "$USER@$HOST_C:/home/$USER/backend_temp_deploy/Consumer - RabbitMQ" "$KEY_CD"
+          retry_rsync "Sprint 4 - CleanArch/nginx/" "$USER@$HOST_C:/home/$USER/backend_temp_deploy/nginx" "$KEY_CD"
+          retry_ssh "echo '${{ secrets.EC2_SSH_KEY_CD }}' > ~/private_key.pem && chmod 600 ~/private_key.pem" "$KEY_CD" "$HOST_C"
+
+          echo "🔁 Replicando código de C → Privado D (SEM banco, aponta para B)..."do D (SEM banco, aponta para B)..."
+          retry_ssh "
+            rsync -avz --partial --timeout=60 \
+              -e 'ssh -i ~/private_key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30' \
+              /home/$USER/backend_temp_deploy/ $USER@$HOST_D:/home/$USER/backend
+          " "$KEY_CD" "$HOST_C"
+
+          echo "⚙️ Executando script de deploy no Privado D (SEM MySQL/RabbitMQ, conecta à Privada B)..."
+          retry_ssh "ssh -i ~/private_key.pem -o StrictHostKeyChecking=no $USER@$HOST_D 'RUN_DB=false DB_HOST=${{ secrets.REMOTE_HOST_PRIVADO_B }} RABBITMQ_HOST=${{ secrets.REMOTE_HOST_PRIVADO_B }} DB_USERNAME=mimastore_user DB_PASSWORD=12345 bash /home/$USER/backend/JavaSpringBoot/projetoMima/deploy_on_privado.sh'" "$KEY_CD" "$HOST_C"
+
+          echo "✅ Deploy finalizado com sucesso em todas as zonas!"

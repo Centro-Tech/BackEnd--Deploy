@@ -265,14 +265,14 @@ jobs:
           retry_rsync "Sprint 4 - CleanArch/nginx/" "$USER@$HOST_A:/home/$USER/backend_temp_deploy/nginx" "$KEY_AB"
           retry_ssh "echo '${{ secrets.EC2_SSH_KEY_AB }}' > ~/private_key.pem && chmod 600 ~/private_key.pem" "$KEY_AB" "$HOST_A"
 
-          echo "🔁 Replicando código de A → Privado B (COM MySQL e RabbitMQ)..."do B (COM MySQL e RabbitMQ)..."
+          echo "🔁 Replicando código de A → Privado B - COM MySQL e RabbitMQ..."
           retry_ssh "
             rsync -avz --partial --timeout=60 \
               -e 'ssh -i ~/private_key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30' \
               /home/$USER/backend_temp_deploy/ $USER@$HOST_B:/home/$USER/backend
           " "$KEY_AB" "$HOST_A"
 
-          echo "⚙️ Executando script de deploy no Privado B (COM MySQL + RabbitMQ)..."
+          echo "⚙️ Executando script de deploy no Privado B - COM MySQL + RabbitMQ..."
           retry_ssh "ssh -i ~/private_key.pem -o StrictHostKeyChecking=no $USER@$HOST_B 'RUN_DB=true DB_HOST=localhost DB_USERNAME=mimastore_user DB_PASSWORD=12345 bash /home/$USER/backend/JavaSpringBoot/projetoMima/deploy_on_privado.sh'" "$KEY_AB" "$HOST_A"
 
           # ---------------------------------------------------------
@@ -291,14 +291,14 @@ jobs:
           retry_rsync "Sprint 4 - CleanArch/nginx/" "$USER@$HOST_C:/home/$USER/backend_temp_deploy/nginx" "$KEY_CD"
           retry_ssh "echo '${{ secrets.EC2_SSH_KEY_CD }}' > ~/private_key.pem && chmod 600 ~/private_key.pem" "$KEY_CD" "$HOST_C"
 
-          echo "🔁 Replicando código de C → Privado D (SEM banco, aponta para B)..."do D (SEM banco, aponta para B)..."
+          echo "🔁 Replicando código de C → Privado D - SEM banco, aponta para B..."
           retry_ssh "
             rsync -avz --partial --timeout=60 \
               -e 'ssh -i ~/private_key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30' \
               /home/$USER/backend_temp_deploy/ $USER@$HOST_D:/home/$USER/backend
           " "$KEY_CD" "$HOST_C"
 
-          echo "⚙️ Executando script de deploy no Privado D (SEM MySQL/RabbitMQ, conecta à Privada B)..."
+          echo "⚙️ Executando script de deploy no Privado D - SEM MySQL/RabbitMQ, conecta à Privada B..."
           retry_ssh "ssh -i ~/private_key.pem -o StrictHostKeyChecking=no $USER@$HOST_D 'RUN_DB=false DB_HOST=${{ secrets.REMOTE_HOST_PRIVADO_B }} RABBITMQ_HOST=${{ secrets.REMOTE_HOST_PRIVADO_B }} DB_USERNAME=mimastore_user DB_PASSWORD=12345 bash /home/$USER/backend/JavaSpringBoot/projetoMima/deploy_on_privado.sh'" "$KEY_CD" "$HOST_C"
 
           echo "✅ Deploy finalizado com sucesso em todas as zonas!"

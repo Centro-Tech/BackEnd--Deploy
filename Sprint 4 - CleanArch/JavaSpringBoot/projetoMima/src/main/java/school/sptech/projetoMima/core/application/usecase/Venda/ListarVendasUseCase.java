@@ -1,5 +1,6 @@
 package school.sptech.projetoMima.core.application.usecase.Venda;
 
+import org.springframework.cache.annotation.Cacheable;
 import school.sptech.projetoMima.core.adapter.Venda.VendaGateway;
 import school.sptech.projetoMima.core.domain.Venda;
 import org.springframework.data.domain.Page;
@@ -19,6 +20,7 @@ public class ListarVendasUseCase {
         return vendaGateway.findAll();
     }
 
+    @Cacheable(value = "vendas", key = "#pageable.pageNumber + '-' + #pageable.pageSize")
     public Page<Venda> execute(Pageable pageable) {
         return vendaGateway.findAll(pageable);
     }

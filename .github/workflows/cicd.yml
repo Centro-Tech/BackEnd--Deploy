@@ -128,8 +128,8 @@ jobs:
             echo "🗄️ Subindo MySQL e RabbitMQ na instância privada B..."
             if [ -d "$DB_DIR" ]; then
               cd "$DB_DIR"
-              sudo $COMPOSE_CMD down -v || true
-              sudo $COMPOSE_CMD up -d --build
+              sudo \$COMPOSE_CMD down -v || true
+              sudo \$COMPOSE_CMD up -d --build
               echo "✅ MySQL iniciado com sucesso"
               echo "⏳ Aguardando MySQL inicializar (30 segundos)..."
               sleep 30
@@ -154,8 +154,8 @@ jobs:
             echo "DB_PASSWORD=\$DB_PASSWORD" >> .env
             echo "RABBITMQ_HOST=\$RABBITMQ_HOST" >> .env
             
-            sudo $COMPOSE_CMD down -v || true
-            sudo $COMPOSE_CMD up -d --build
+            sudo \$COMPOSE_CMD down -v || true
+            sudo \$COMPOSE_CMD up -d --build
             
             echo "⏳ Aguardando backend inicializar..."
             sleep 15

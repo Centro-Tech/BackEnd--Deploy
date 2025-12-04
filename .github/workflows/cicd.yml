@@ -149,10 +149,10 @@ jobs:
             
             # Criar arquivo .env com configurações do banco
             echo "📝 Criando arquivo .env com configurações do banco..."
-            echo "DB_HOST=\$DB_HOST" > .env
-            echo "DB_USERNAME=\$DB_USERNAME" >> .env
-            echo "DB_PASSWORD=\$DB_PASSWORD" >> .env
-            echo "RABBITMQ_HOST=\$RABBITMQ_HOST" >> .env
+            echo "DB_HOST=$DB_HOST" > .env
+            echo "DB_USERNAME=$DB_USERNAME" >> .env
+            echo "DB_PASSWORD=$DB_PASSWORD" >> .env
+            echo "RABBITMQ_HOST=$RABBITMQ_HOST" >> .env
             
             sudo $COMPOSE_CMD down -v || true
             sudo $COMPOSE_CMD up -d --build

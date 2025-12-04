@@ -36,15 +36,19 @@ fi
 
 # 2. Subir o banco de dados (apenas se RUN_DB=true)
 if [ "$RUN_DB" = "true" ]; then
-    echo "🗄️ Subindo MySQL na instância privada B..."
+    echo "🗄️ Subindo MySQL e RabbitMQ na instância privada B..."
     DB_DIR="$BACKEND_DIR/Banco de Dados"
     if [ -d "$DB_DIR" ]; then
         cd "$DB_DIR"
         sudo docker-compose down || true
         sudo docker-compose up -d --build
-        echo "✅ MySQL iniciado com sucesso"
+        echo "✅ MySQL e RabbitMQ iniciados com sucesso"
         echo "⏳ Aguardando MySQL inicializar (30 segundos)..."
         sleep 30
+        # Quando o MySQL está rodando localmente, usar o nome do container Docker
+        DB_HOST="mimastore-db"
+        RABBITMQ_HOST="mimastore-rabbitmq"
+        echo "🔄 Atualizando hosts para containers Docker: DB_HOST=$DB_HOST, RABBITMQ_HOST=$RABBITMQ_HOST"
     else
         echo "⚠️ Diretório do banco não encontrado: $DB_DIR"
     fi
@@ -68,13 +72,16 @@ DB_PASSWORD=$DB_PASSWORD
 RABBITMQ_HOST=$RABBITMQ_HOST
 EOF
 
+echo "📄 Conteúdo do .env criado:"
+cat .env
+
 # 5. Parar container antigo
 echo "🛑 Parando containers antigos..."
 sudo docker-compose down || true
 
-# 6. Subir nova versão (apenas backend)
-echo "🐳 Iniciando container do Backend..."
-sudo docker-compose up -d --build
+# 6. Subir nova versão (apenas backend) com variáveis explícitas
+echo "🐳 Iniciando container do Backend com DB_HOST=$DB_HOST..."
+sudo -E DB_HOST="$DB_HOST" DB_USERNAME="$DB_USERNAME" DB_PASSWORD="$DB_PASSWORD" RABBITMQ_HOST="$RABBITMQ_HOST" docker-compose up -d --build
 
 # 7. Aguardar backend estar pronto
 echo "⏳ Aguardando backend inicializar..."

@@ -273,7 +273,7 @@ jobs:
           " "$KEY_AB" "$HOST_A"
 
           echo "⚙️ Executando script de deploy no Privado B - COM MySQL + RabbitMQ..."
-          retry_ssh "ssh -i ~/private_key.pem -o StrictHostKeyChecking=no $USER@$HOST_B 'RUN_DB=true DB_HOST=localhost DB_USERNAME=mimastore_user DB_PASSWORD=12345 bash /home/$USER/backend/JavaSpringBoot/projetoMima/deploy_on_privado.sh'" "$KEY_AB" "$HOST_A"
+          retry_ssh "ssh -i ~/private_key.pem -o StrictHostKeyChecking=no $USER@$HOST_B 'RUN_DB=true DB_HOST=mimastore-db RABBITMQ_HOST=mimastore-rabbitmq DB_USERNAME=mimastore_user DB_PASSWORD=12345 bash /home/$USER/backend/JavaSpringBoot/projetoMima/deploy_on_privado.sh'" "$KEY_AB" "$HOST_A"
 
           # ---------------------------------------------------------
           # 🧭 Deploy - Zona 2 (C → D)
